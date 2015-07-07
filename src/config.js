@@ -6,6 +6,7 @@ define(function(){
   var config = {
       inputStream: { name: "Live",
           type: "LiveStream",
+          videoContainer: undefined, // html element container to place video and canvas
           constraints: {
               width: 640,
               height: 480,

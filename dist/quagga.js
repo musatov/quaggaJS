@@ -8028,6 +8028,7 @@ define('config',[],function(){
   var config = {
       inputStream: { name: "Live",
           type: "LiveStream",
+          videoContainer: undefined,
           constraints: {
               width: 640,
               height: 480,
@@ -8423,7 +8424,8 @@ function(Code128Reader,
         _decoder,
         _workerPool = [],
         _onUIThread = true,
-        _resultCollector;
+        _resultCollector,
+        _onDomCreated;
 
     function initializeData(imageWrapper) {
         initBuffers(imageWrapper);
@@ -8454,7 +8456,18 @@ function(Code128Reader,
 
     function initInputStream(cb) {
         var video;
-        if (_config.inputStream.type == "VideoStream") {
+        if (typeof _config.inputStream.videoContainer !== "undefined") {
+            video = document.createElement("video");
+            _config.inputStream.videoContainer.appendChild(video);
+            _inputStream = InputStream.createLiveStream(video);
+            CameraAccess.request(video, _config.inputStream.constraints, function(err) {
+                if (!err) {
+                    _inputStream.trigger("canrecord");
+                } else {
+                    console.log(err);
+                }
+            });
+        } else if (_config.inputStream.type == "VideoStream") {
             video = document.createElement("video");
             _inputStream = InputStream.createVideoStream(video);
         } else if (_config.inputStream.type == "ImageStream") {
@@ -8487,6 +8500,9 @@ function(Code128Reader,
     function canRecord(cb) {
         BarcodeLocator.checkImageConstraints(_inputStream, _config.locator);
         initCanvas();
+        if (_onDomCreated) {
+            _onDomCreated();
+        }
         _framegrabber = FrameGrabber.create(_inputStream, _canvasContainer.dom.image);
         initConfig();
 
@@ -8507,7 +8523,32 @@ function(Code128Reader,
     }
 
     function initCanvas() {
-        if (typeof document !== "undefined") {
+        if (typeof _config.inputStream.videoContainer !== "undefined") {
+            var videoContainer = _config.inputStream.videoContainer;
+
+            _canvasContainer.dom.image = document.createElement("canvas");
+            _canvasContainer.dom.image.className = "imgBuffer";
+
+            _canvasContainer.ctx.image = _canvasContainer.dom.image.getContext("2d");
+            _canvasContainer.dom.image.width = _inputStream.getCanvasSize().x;
+            _canvasContainer.dom.image.height = _inputStream.getCanvasSize().y;
+
+            _canvasContainer.dom.overlay = document.createElement("canvas");
+            _canvasContainer.dom.overlay.className = "drawingBuffer";
+            if (videoContainer) {
+                videoContainer.appendChild(_canvasContainer.dom.overlay);
+            }
+
+            var clearFixElement = document.createElement("br");
+            clearFixElement.setAttribute("clear", "all");
+            if (videoContainer) {
+                videoContainer.appendChild(clearFixElement);
+            }
+
+            _canvasContainer.ctx.overlay = _canvasContainer.dom.overlay.getContext("2d");
+            _canvasContainer.dom.overlay.width = _inputStream.getCanvasSize().x;
+            _canvasContainer.dom.overlay.height = _inputStream.getCanvasSize().y;
+        } else if (typeof document !== "undefined") {
             var $viewport = document.querySelector("#interactive.viewport");
             _canvasContainer.dom.image = document.querySelector("canvas.imgBuffer");
             if (!_canvasContainer.dom.image) {
@@ -8725,6 +8766,10 @@ function(Code128Reader,
             }
         };
 
+        // ToDo: remove this hack
+        // Remove container because it can not be copied
+        delete _config.inputStream.videoContainer;
+
         workerThread.worker.postMessage({
             cmd: 'init',
             size: {x: _inputStream.getWidth(), y: _inputStream.getHeight()},
@@ -8826,6 +8871,9 @@ function(Code128Reader,
         },
         pause: function() {
             _stopped = true;
+        },
+        onDomCreated : function(callback) {
+            _onDomCreated = callback;
         },
         onDetected : function(callback) {
             Events.subscribe("detected", callback);
